@@ -4,3 +4,11 @@ Revision history for Perl extension IO::Handle::Record.
 	- original version; created by h2xs 1.23 with options
 		-n IO::Handle::Record -A -X -b 5.8.0
 
+
+0.02 Tue Jan 18 09:36:00 CET 2005
+	* Torsten Foertsch <torsten.foertsch@gmx.net>
+	- changed "package IO::Handle" to "package IO::Handle::Record"
+	  to get the module indexed by the CPAN indexer.
+	- pushed 'IO::Handle::Record' to @IO::Handle::ISA to make IO::Handle
+	  inherit from IO::Handle::Record
+	- this seems to be functionally equivalent to the previous version

@@ -1,4 +1,4 @@
-package IO::Handle;
+package IO::Handle::Record;
 
 use 5.008;
 use strict;
@@ -7,7 +7,9 @@ use warnings;
 use Storable;
 use Class::Member::GLOB qw/record_opts/;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
+
+push @IO::Handle::ISA, 'IO::Handle::Record';
 
 sub read_record {
   my $I=shift;
@@ -72,7 +74,8 @@ IO::Handle::Record - IO::Handle extension to pass perl data structures
 
 =head1 DESCRIPTION
 
-C<IO::Handle::Record> is a drop in extension to the C<IO::Handle> class.
+C<IO::Handle::Record> extends the C<IO::Handle> class by making it inherit
+from C<IO::Handle::Record>.
 Since many classes derive from C<IO::Handle> these extensions can be used
 with C<IO::File>, C<IO::Socket>, C<IO::Pipe>, etc.
 
