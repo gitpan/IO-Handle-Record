@@ -25,10 +25,9 @@ SYNOPSIS
      }
 
 DESCRIPTION
-    "IO::Handle::Record" extends the "IO::Handle" class by making it inherit
-    from "IO::Handle::Record". Since many classes derive from "IO::Handle"
-    these extensions can be used with "IO::File", "IO::Socket", "IO::Pipe",
-    etc.
+    "IO::Handle::Record" extends the "IO::Handle" class. Since many classes
+    derive from "IO::Handle" these extensions can be used with "IO::File",
+    "IO::Socket", "IO::Pipe", etc.
 
     The methods provided read and write lists of perl data structures. They
     can pass anything that can be serialized with "Storable" even

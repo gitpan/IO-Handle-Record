@@ -6,11 +6,11 @@
 # change 'tests => 1' to 'tests => last_test_to_print';
 
 use Test::More tests => 11;
-use IO::Socket::UNIX;
-use IO::Pipe;
 use Data::Dumper;
 $Data::Dumper::Deparse=1;
 BEGIN { use_ok('IO::Handle::Record') };
+use IO::Socket::UNIX;
+use IO::Pipe;
 
 #########################
 
