@@ -1,0 +1,8 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+mk_README.sh
+t/IO-Handle-Record.t
+lib/IO/Handle/Record.pm
+META.yml                                 Module meta-data (added by MakeMaker)

@@ -1,0 +1,94 @@
+NAME
+    IO::Handle::Record - IO::Handle extension to pass perl data structures
+
+SYNOPSIS
+     use IO::Socket::UNIX;
+     use IO::Handle::Record;
+
+     ($p, $c)=IO::Socket::UNIX->socketpair( AF_UNIX,
+                                            SOCK_STREAM,
+                                            PF_UNSPEC );
+     while( !defined( $pid=fork ) ) {sleep 1}
+
+     if( $pid ) {
+       close $c; undef $c;
+ 
+       $p->record_opts={send_CODE=>1};
+       $p->write_record( {a=>'b', c=>'d'},
+                         sub { $_[0]+$_[1] },
+                         [qw/this is a test/] );
+     } else {
+       close $p; undef $p;
+ 
+       $c->record_opts={receive_CODE=>sub {eval $_[0]}};
+       ($hashref, $coderef, $arrayref)=$c->read_record;
+     }
+
+DESCRIPTION
+    "IO::Handle::Record" is a drop in extension to the "IO::Handle" class.
+    Since many classes derive from "IO::Handle" these extensions can be used
+    with "IO::File", "IO::Socket", "IO::Pipe", etc.
+
+    The methods provided read and write lists of perl data structures. They
+    can pass anything that can be serialized with "Storable" even
+    subroutines between processes.
+
+    The following methods are added:
+
+    record_opts
+        This lvalue method expects a hash reference with options as
+        parameter. The "send_CODE" and "receive_CODE" options are defined.
+        They correspond to localized versions of $Storable::Deparse and
+        $Storable::Eval respectively. See the Storable manpage for further
+        information.
+
+        Example:
+
+         $handle->record_opts={send_CODE=>1, receive_CODE=>1};
+
+    write_record
+        writes a list of perl data structures.
+
+        Example:
+
+         $handle->write_record( [1,2],
+                                sub {$_[0]+$_[1]},
+                                { list=>[1,2,3],
+                                  hash=>{a=>'b'},
+                                  code=>sub {print "test\n";} } );
+
+    read_record
+        reads one record of perl data structures. Returns the list.
+
+        Example:
+
+         ($array, $sub, $hash)=$handle->read_record;
+
+  EXPORT
+    None.
+
+SEE ALSO
+    "IO::Handle"
+
+AUTHOR
+    Torsten Foertsch, <torsten.foertsch@gmx.net<gt>
+
+COPYRIGHT AND LICENSE
+    Copyright (C) 2005 by Torsten Foertsch
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
+INSTALLATION
+     perl Makefile.PL
+     make
+     make test
+     make install
+
+DEPENDENCIES
+    *   perl 5.8.0
+
+    *   Storable 2.05
+
+    *   Class::Member 1.3
+

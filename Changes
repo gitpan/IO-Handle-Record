@@ -1,0 +1,6 @@
+Revision history for Perl extension IO::Handle::Record.
+
+0.01  Mon Jan 17 13:54:03 2005
+	- original version; created by h2xs 1.23 with options
+		-n IO::Handle::Record -A -X -b 5.8.0
+
