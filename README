@@ -35,7 +35,7 @@ DESCRIPTION
 
     The following methods are added:
 
-    record_opts
+    $handle->record_opts
         This lvalue method expects a hash reference with options as
         parameter. The "send_CODE" and "receive_CODE" options are defined.
         They correspond to localized versions of $Storable::Deparse and
@@ -46,8 +46,17 @@ DESCRIPTION
 
          $handle->record_opts={send_CODE=>1, receive_CODE=>1};
 
-    write_record
+    $handle->write_record(@data)
         writes a list of perl data structures.
+
+        "write_record" returns 1 if the record has been transmitted. "undef"
+        is returned if $handle is non blocking and a EAGAIN condition is
+        met. In this case reinvoke the operation without parameters (just
+        "$handle->write_record") when the handle becomes ready. Otherwise it
+        throws an exception "IO::Handle::Record: syswrite error". Check $!
+        in this case.
+
+        EINTR is handled internally.
 
         Example:
 
@@ -57,12 +66,29 @@ DESCRIPTION
                                   hash=>{a=>'b'},
                                   code=>sub {print "test\n";} } );
 
-    read_record
-        reads one record of perl data structures. Returns the list.
+    @data=$handle->read_record
+        reads one record of perl data structures.
+
+        On success it returns the record as list. An empty list is returned
+        if $handle is in non blocking mode and not enough data has been
+        read. Check $!==EAGAIN to catch this condition. When the handle
+        becomes ready just repeat the operation to read the next data chunk.
+        If a complete record has arrived it is returned.
+
+        On EOF an empty list is returned. To distinguish this from the non
+        blocking empty list return set "$!=0" before the operation and check
+        for "$!==EAGAIN" after.
+
+        EINTR is handled internally.
 
         Example:
 
          ($array, $sub, $hash)=$handle->read_record;
+
+    $handle->read_buffer =item $handle->expected =item $handle->write_buffer
+    =item $handle->written
+        these methods are used internally to provide a read and write buffer
+        for non blocking operations.
 
   EXPORT
     None.

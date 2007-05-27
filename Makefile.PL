@@ -6,6 +6,7 @@ WriteMakefile(
     NAME              => 'IO::Handle::Record',
     VERSION_FROM      => 'lib/IO/Handle/Record.pm', # finds $VERSION
     PREREQ_PM         => {
+			  'Test::Deep' => 0,
 			  'Class::Member' => 1.3,
 			  'Storable' => 2.05,
 			 }, # e.g., Module::Name => 1.1
@@ -16,3 +17,13 @@ WriteMakefile(
 			  PREOP => './mk_README.sh',
 			 },
 );
+
+sub MY::postamble {
+  return <<'EOF';
+README: lib/IO/Handle/Record.pm mk_README.sh
+	./mk_README.sh
+
+rpm: dist
+	rpmbuild -ba perl-IO-Handle-Record.spec
+EOF
+}

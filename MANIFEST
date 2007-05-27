@@ -3,6 +3,7 @@ Makefile.PL
 MANIFEST
 README
 mk_README.sh
+perl-IO-Handle-Record.spec
 t/IO-Handle-Record.t
 lib/IO/Handle/Record.pm
 META.yml                                 Module meta-data (added by MakeMaker)

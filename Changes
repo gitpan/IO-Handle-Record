@@ -16,3 +16,11 @@ Revision history for Perl extension IO::Handle::Record.
 	* Torsten Foertsch <torsten.foertsch@gmx.net>
 	- no longer pushing to @IO::Handle::ISA because then the order in
 	  IO::Handle and IO::Handle::Record are use()d in matters.
+
+0.05 Thu Jan  4 21:01:47 CET 2007
+	* Torsten Foertsch <torsten.foertsch@gmx.net>
+	- bugfile: read_record: sysread must check for 0 instead of undef
+
+0.06 Sun May 27 13:30:29 CEST 2007
+	* Torsten Foertsch <torsten.foertsch@gmx.net>
+	- support for non blocking operations
