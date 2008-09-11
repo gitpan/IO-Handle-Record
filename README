@@ -12,17 +12,30 @@ SYNOPSIS
 
      if( $pid ) {
        close $c; undef $c;
- 
+
+       $p->fds_to_send=[\*STDIN, \*STDOUT];
        $p->record_opts={send_CODE=>1};
        $p->write_record( {a=>'b', c=>'d'},
                          sub { $_[0]+$_[1] },
                          [qw/this is a test/] );
      } else {
        close $p; undef $p;
- 
+
        $c->record_opts={receive_CODE=>sub {eval $_[0]}};
        ($hashref, $coderef, $arrayref)=$c->read_record;
+       readline $c->received_fds->[0];       # reads from the parent's STDIN
      }
+
+INSTALLATION
+     perl Makefile.PL
+     make
+     make test
+     make install
+
+DEPENDENCIES
+    * perl 5.8.0
+    * Storable 2.05
+    * Class::Member 1.3
 
 DESCRIPTION
     "IO::Handle::Record" extends the "IO::Handle" class. Since many classes
@@ -37,14 +50,42 @@ DESCRIPTION
 
     $handle->record_opts
         This lvalue method expects a hash reference with options as
-        parameter. The "send_CODE" and "receive_CODE" options are defined.
-        They correspond to localized versions of $Storable::Deparse and
-        $Storable::Eval respectively. See the Storable manpage for further
-        information.
+        parameter. The "send_CODE" and "receive_CODE" options correspond to
+        localized versions of $Storable::Deparse and $Storable::Eval
+        respectively. Using them Perl code can be passed over a connection.
+        See the Storable manpage for further information.
+
+        In a few cases IO::Handle::Record passes binary data over the
+        connection. Normally network byte order is used there. You can save
+        a few CPU cycles if you set the "local_encoding" option to true. In
+        this case the byte order of the local machine is used.
 
         Example:
 
-         $handle->record_opts={send_CODE=>1, receive_CODE=>1};
+         $handle->record_opts={send_CODE=>1, receive_CODE=>1, local_encoding=>1};
+
+    $handle->fds_to_send=\@fds
+        Called before "write_record" sets a list of file handles that are
+        passed to the other end of a UNIX domain stream socket. The next
+        "write_record" transfers them as open files. So the other process
+        can read or write to them.
+
+    @fds=@{$handle->received_fds}
+        This is the counterpart to "fds_to_send". After a successful
+        "read_record" the receiving process can fetch the transferred
+        handles from this list. The handles are GLOBs blessed to one of:
+
+        * IO::File
+        * IO::Dir
+        * IO::Pipe
+        * IO::Socket::UNIX
+        * IO::Socket::INET
+        * IO::Socket::INET6
+        * IO::Handle
+
+        according to their type. "IO::Handle" is used as kind of catchall
+        type. Open devices are received as such. "IO::Handle::Record" does
+        not load all of these modules. That's up to you.
 
     $handle->write_record(@data)
         writes a list of perl data structures.
@@ -85,13 +126,57 @@ DESCRIPTION
 
          ($array, $sub, $hash)=$handle->read_record;
 
-    $handle->read_buffer =item $handle->expected =item $handle->write_buffer
-    =item $handle->written
+    $handle->read_buffer
+    $handle->expected
+    $handle->expect_fds
+    $handle->_received_fds
+    $handle->write_buffer
+    $handle->written
         these methods are used internally to provide a read and write buffer
         for non blocking operations.
 
   EXPORT
     None.
+
+Data Transfer Format
+    The Perl data is serialized using Storable::freeze or Storable::nfreeze.
+    Storable::freeze is used if the "local_encoding" option is set,
+    Storable::nfreeze otherwise.
+
+    The length in bytes of this data chunk and the number of file handles
+    that are passed along with the data are then each "pack()"ed as a 4 byte
+    binary value using the "L" or "N" template. "L" is used of
+    "local_encoding" is in effect.
+
+    Both fields is the prepended to the data chunk:
+
+     +-----------------+------------------------+
+     | data length (N) | number of file handles |
+     | 4 bytes         | 4 bytes                |
+     +-----------------+------------------------+
+     |                                          |
+     |                                          |
+     |                                          |
+     |                                          |
+     |                   data                   |
+     |                                          |
+     |                 N bytes                  |
+     |                                          |
+     |                                          |
+     |                                          |
+     |                                          |
+     |                                          |
+     +------------------------------------------+
+
+    WARNING: The transfer format has changed in version 0.07 (never made it
+    to CPAN) and again in version 0.08.
+
+TODO
+    *   compression
+
+    *   encryption
+
+    *   credential passing over UNIX domain sockets
 
 SEE ALSO
     "IO::Handle"
@@ -100,21 +185,8 @@ AUTHOR
     Torsten Foertsch, <torsten.foertsch@gmx.net<gt>
 
 COPYRIGHT AND LICENSE
-    Copyright (C) 2005 by Torsten Foertsch
+    Copyright (C) 2005-2008 by Torsten Foertsch
 
     This library is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.
-
-INSTALLATION
-     perl Makefile.PL
-     make
-     make test
-     make install
-
-DEPENDENCIES
-    *   perl 5.8.0
-
-    *   Storable 2.05
-
-    *   Class::Member 1.3
 

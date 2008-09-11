@@ -23,7 +23,10 @@ sub MY::postamble {
 README: lib/IO/Handle/Record.pm mk_README.sh
 	./mk_README.sh
 
+COMPRESS = gzip -9f
+
 rpm: dist
+	$(PERL) -i -pe 's/^(Version:\s*).*/$${1}$(VERSION)/' perl-IO-Handle-Record.spec
 	rpmbuild -ba perl-IO-Handle-Record.spec
 EOF
 }

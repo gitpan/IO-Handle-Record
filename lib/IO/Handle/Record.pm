@@ -4,21 +4,125 @@ use 5.008;
 use strict;
 use warnings;
 use Storable;
-use Class::Member::GLOB qw/record_opts read_buffer expected
-			   write_buffer written/;
+use Class::Member::GLOB qw/record_opts
+			   read_buffer expected expect_fds received_fds
+			   _received_fds
+			   write_buffer fds_to_send written/;
 use Errno qw/EAGAIN EINTR/;
 use Carp;
+use Socket;
+require XSLoader;
 
-our $VERSION = '0.06';
+our $VERSION = '0.08';
+XSLoader::load('IO::Handle::Record', $VERSION);
+
+BEGIN {
+  package IO::Handle::Record::MsgHdr;
+
+  for my $attr (qw/name buf control flags/) {
+    no strict 'refs';
+
+    *{$attr} = sub : lvalue {
+      my $self = shift;
+      $self->{$attr} = shift if @_;
+      $self->{$attr};
+    };
+  }
+
+  foreach my $attr (qw/name buf control/) {
+    no strict 'refs';
+    *{$attr . "len"} = sub {
+      my $self = shift;
+      my $olen = defined $self->{$attr} ? length($self->{$attr}) : 0;
+      return $olen unless @_;
+
+      my $nlen = shift;
+      if ($nlen != $olen) {
+        $self->{$attr} = $olen > $nlen ?
+                         substr($self->{$attr}, 0, $nlen) :
+                         "\x00" x $nlen;
+      }
+      $nlen;
+    };
+  }
+
+  sub new {
+    my $class = shift;
+    my $self = bless { name => '', control => '', flags => 0 }, $class;
+
+    my %args = @_;
+    foreach my $m (keys %args) {
+      $self->$m($args{$m});
+    }
+
+    return $self;
+  }
+
+  sub cmsghdr {
+    my $self = shift;
+    unless (@_) { return &unpack_cmsghdr($self->{control}); }
+    $self->{control} = &pack_cmsghdr(@_);
+  }
+}
+
+sub open_fd {
+  my ($fd, $flags)=@_;
+  use Fcntl qw/O_APPEND O_RDONLY O_WRONLY O_RDWR O_ACCMODE/;
+  use POSIX ();
+  use IO::Handle ();
+
+  if( ($flags & O_ACCMODE) == O_RDONLY ) {
+    $flags='<';
+  } elsif( ($flags & O_ACCMODE) == O_WRONLY ) {
+    if( $flags & O_APPEND ) {
+      $flags='>>';
+    } else {
+      $flags='>';
+    }
+  } elsif( ($flags & O_ACCMODE) == O_RDWR ) {
+    if( $flags & O_APPEND ) {
+      $flags='+>>';
+    } else {
+      $flags='+>';
+    }
+  } else {
+    POSIX::close($fd);
+    return undef;
+  }
+
+  return bless IO::Handle->new_from_fd($fd, $flags),
+               IO::Handle::Record::typeof($fd);
+}
 
 sub read_record {
   my $I=shift;
 
+  my $reader=(issock($I)
+	      ? sub {
+		#my ($fh, $buf, $len, $off)=@_;
+		my $mh=IO::Handle::Record::MsgHdr->new
+		  (buflen=>$_[2], controllen=>10240);
+		my $read=recvmsg($_[0], $mh);
+		if( defined $read ) {
+		  substr( $_[1], (@_>3?0+$_[3]:0) )=$mh->buf;
+		  if( $mh->controllen ) {
+		    $_[0]->_received_fds=[]
+		      unless( defined $_[0]->_received_fds );
+		    push @{$_[0]->_received_fds}, map {
+		      open_fd(@{$_});
+		    } @{($mh->cmsghdr)[2]};
+		  }
+		}
+		return $read;
+	      }
+	      : sub { sysread $_[0], $_[1], $_[2], (@_>3?$_[3]:()); });
+
   unless( defined $I->expected ) {
+    undef $I->received_fds if( $I->can('received_fds') );
     $I->read_buffer='' unless( defined $I->read_buffer );
     my $buflen=length($I->read_buffer);
-    while( $buflen<4 ) {
-      my $len=$I->sysread( $I->read_buffer, 4-$buflen, $buflen );
+    while( $buflen<8 ) {
+      my $len=$reader->( $I, $I->read_buffer, 8-$buflen, $buflen );
       if( defined($len) && $len==0 ) { # EOF
 	undef $I->read_buffer;
 	return;
@@ -29,11 +133,16 @@ sub read_record {
       } elsif( !$len ) {	# ERROR
 	$len=length $I->read_buffer;
 	undef $I->read_buffer;
-	croak "IO::Handle::Record: Protocol Error (got $len bytes, expected 4)";
+	croak "IO::Handle::Record: Protocol Error (got $len bytes, expected 8)";
       }
       $buflen+=$len;
     }
-    $I->expected=unpack "L", $I->read_buffer;
+    my $L=($I->record_opts && $I->record_opts->{local_encoding}) ? 'L' : 'N';
+    if( $I->can('expect_fds') ) {
+      ($I->expected, $I->expect_fds)=unpack $L.'2', $I->read_buffer;
+    } else {
+      ($I->expected)=unpack $L.'2', $I->read_buffer;
+    }
     $I->read_buffer='';
   }
 
@@ -41,18 +150,26 @@ sub read_record {
   my $buflen=length($I->read_buffer);
   while( $buflen<$wanted ) {
     my $len=$I->sysread( $I->read_buffer, $wanted-$buflen, $buflen );
-    if( !defined($len) && $!==EAGAIN ) {
-      return;			# non blocking file handle
-    } elsif( !defined($len) && $!==EINTR ) {
-      next;			# interrupted
-    } elsif( !$len ) {		# EOF or ERROR
+
+    if( defined $len and $len>0 ) {
+      $buflen+=$len;
+    } elsif( defined $len ) {	# EOF
       $len=length $I->read_buffer;
       undef $I->read_buffer;
-      croak "IO::Handle::Record: Protocol Error (got $len bytes, expected $wanted)";
+      croak "IO::Handle::Record: Protocol Error: premature end of file";
+    } elsif( $!==EAGAIN ) {
+      return;
+    } elsif( $!==EINTR ) {
+    } else {
+      undef $I->read_buffer;
+      croak "IO::Handle::Record: Protocol Error: sysread: $!";
     }
-    $buflen+=$len;
   }
 
+  if( $I->can('expect_fds') and
+      $I->expect_fds>0 and defined $I->_received_fds ) {
+    $I->received_fds=[splice @{$I->_received_fds}, 0, $I->expect_fds];
+  }
   my $rc=eval {
     local $Storable::Eval;
     $I->record_opts and $Storable::Eval=$I->record_opts->{receive_CODE};
@@ -73,11 +190,39 @@ sub read_record {
 sub write_record {
   my $I=shift;
 
+  my $writer=(issock($I)
+	      ? sub {
+		#my ($fh, $buf, $len, $off)=@_;
+		my $mh=IO::Handle::Record::MsgHdr->new
+		  (buf=>substr($_[1], (@_>3?0+$_[3]:0), $_[2]));
+		if( defined $_[0]->fds_to_send and
+		    @{$_[0]->fds_to_send} ) {
+		  $mh->cmsghdr
+		    (SOL_SOCKET, SCM_RIGHTS,
+		     pack('i'.@{$_[0]->fds_to_send},
+			  map {
+			    my $fd=fileno $_;
+			    croak "IO::Handle::Record: cannot pass closed file handle\n"
+			      unless( defined $fd );
+			    $fd;
+			  } @{$_[0]->fds_to_send}));
+		}
+		my $written=sendmsg($_[0], $mh);
+		if( defined $written and defined $_[0]->fds_to_send ) {
+		  @{$_[0]->fds_to_send}=(); # done
+		}
+		return $written;
+	      }
+	      : sub { syswrite $_[0], $_[1], $_[2], (@_>3?$_[3]:()); });
+
   if( @_ ) {
+    my $L=($I->record_opts && $I->record_opts->{local_encoding}) ? 'L' : 'N';
     my $msg=eval {
       local $Storable::Deparse;
       $I->record_opts and $Storable::Deparse=$I->record_opts->{send_CODE};
-      Storable::nfreeze \@_;
+      $L eq 'L'
+	? Storable::freeze \@_
+	: Storable::nfreeze \@_;
     };
     if( $@ ) {
       my $e=$@;
@@ -85,15 +230,22 @@ sub write_record {
       croak $e;
     }
 
-    $I->write_buffer=pack( "L", length($msg) ).$msg;
+    if( $I->can('fds_to_send') ) {
+      $I->write_buffer=pack( $L.'2', length($msg),
+			     (defined $I->fds_to_send
+			      ? 0+@{$I->fds_to_send}
+			      : 0) ).$msg;
+    } else {
+      $I->write_buffer=pack( $L.'2', length($msg), 0 ).$msg;
+    }
     $I->written=0;
   }
 
   my $written;
   while( $I->written<length($I->write_buffer) and
-	 (defined ($written=$I->syswrite( $I->write_buffer,
-					  length($I->write_buffer)-$I->written,
-					  $I->written)) or
+	 (defined ($written=$writer->( $I, $I->write_buffer,
+				       length($I->write_buffer)-$I->written,
+				       $I->written)) or
 	  $!==EINTR) ) {
     $I->written+=$written if( defined $written );
   }
@@ -149,9 +301,13 @@ sub write_simple_record {
 *IO::Handle::read_simple_record=\&read_simple_record;
 *IO::Handle::record_opts=\&record_opts;
 *IO::Handle::expected=\&expected;
+*IO::Socket::UNIX::expect_fds=\&expect_fds;
 *IO::Handle::read_buffer=\&read_buffer;
+*IO::Socket::UNIX::received_fds=\&received_fds;
+*IO::Socket::UNIX::_received_fds=\&_received_fds;
 *IO::Handle::written=\&written;
 *IO::Handle::write_buffer=\&write_buffer;
+*IO::Socket::UNIX::fds_to_send=\&fds_to_send;
 
 1;
 __END__
@@ -172,16 +328,18 @@ IO::Handle::Record - IO::Handle extension to pass perl data structures
 
  if( $pid ) {
    close $c; undef $c;
- 
+
+   $p->fds_to_send=[\*STDIN, \*STDOUT];
    $p->record_opts={send_CODE=>1};
    $p->write_record( {a=>'b', c=>'d'},
                      sub { $_[0]+$_[1] },
                      [qw/this is a test/] );
  } else {
    close $p; undef $p;
- 
+
    $c->record_opts={receive_CODE=>sub {eval $_[0]}};
    ($hashref, $coderef, $arrayref)=$c->read_record;
+   readline $c->received_fds->[0];       # reads from the parent's STDIN
  }
 
 =head1 DESCRIPTION
@@ -201,13 +359,54 @@ The following methods are added:
 =item B<$handle-E<gt>record_opts>
 
 This lvalue method expects a hash reference with options as parameter.
-The C<send_CODE> and C<receive_CODE> options are defined. They correspond
+The C<send_CODE> and C<receive_CODE> options correspond
 to localized versions of C<$Storable::Deparse> and C<$Storable::Eval>
-respectively. See the L<Storable> manpage for further information.
+respectively. Using them Perl code can be passed over a connection.
+See the L<Storable> manpage for further information.
+
+In a few cases IO::Handle::Record passes binary data over the connection.
+Normally network byte order is used there. You can save a few CPU cycles
+if you set the C<local_encoding> option to true. In this case the byte
+order of the local machine is used.
 
 Example:
 
- $handle->record_opts={send_CODE=>1, receive_CODE=>1};
+ $handle->record_opts={send_CODE=>1, receive_CODE=>1, local_encoding=>1};
+
+=item B<$handle-E<gt>fds_to_send=\@fds>
+
+Called before C<write_record> sets a list of file handles that are passed
+to the other end of a UNIX domain stream socket. The next C<write_record>
+transfers them as open files. So the other process can read or write to
+them.
+
+=item B<@fds=@{$handle-E<gt>received_fds}>
+
+This is the counterpart to C<fds_to_send>. After a successful C<read_record>
+the receiving process can fetch the transferred handles from this list.
+The handles are GLOBs blessed to one of:
+
+=over 4
+
+=item B<*> IO::File
+
+=item B<*> IO::Dir
+
+=item B<*> IO::Pipe
+
+=item B<*> IO::Socket::UNIX
+
+=item B<*> IO::Socket::INET
+
+=item B<*> IO::Socket::INET6
+
+=item B<*> IO::Handle
+
+=back
+
+according to their type. C<IO::Handle> is used as kind of catchall type.
+Open devices are received as such. C<IO::Handle::Record> does not load
+all of these modules. That's up to you.
 
 =item B<$handle-E<gt>write_record(@data)>
 
@@ -251,8 +450,15 @@ Example:
  ($array, $sub, $hash)=$handle->read_record;
 
 =item B<$handle-E<gt>read_buffer>
+
 =item B<$handle-E<gt>expected>
+
+=item B<$handle-E<gt>expect_fds>
+
+=item B<$handle-E<gt>_received_fds>
+
 =item B<$handle-E<gt>write_buffer>
+
 =item B<$handle-E<gt>written>
 
 these methods are used internally to provide a read and write buffer for
@@ -264,6 +470,52 @@ non blocking operations.
 
 None.
 
+=head1 Data Transfer Format
+
+The Perl data is serialized using Storable::freeze or Storable::nfreeze.
+Storable::freeze is used if the C<local_encoding> option is set,
+Storable::nfreeze otherwise.
+
+The length in bytes of this data chunk and the number of file handles
+that are passed along with the data are then each C<pack()>ed as a 4 byte
+binary value using the C<L> or C<N> template. C<L> is used of C<local_encoding>
+is in effect.
+
+Both fields is the prepended to the data chunk:
+
+ +-----------------+------------------------+
+ | data length (N) | number of file handles |
+ | 4 bytes         | 4 bytes                |
+ +-----------------+------------------------+
+ |                                          |
+ |                                          |
+ |                                          |
+ |                                          |
+ |                   data                   |
+ |                                          |
+ |                 N bytes                  |
+ |                                          |
+ |                                          |
+ |                                          |
+ |                                          |
+ |                                          |
+ +------------------------------------------+
+
+B<WARNING:> The transfer format has changed in version 0.07 (never made it
+to CPAN) and again in version 0.08.
+
+=head1 TODO
+
+=over 4
+
+=item * compression
+
+=item * encryption
+
+=item * credential passing over UNIX domain sockets
+
+=back
+
 =head1 SEE ALSO
 
 C<IO::Handle>
@@ -274,7 +526,7 @@ Torsten Foertsch, E<lt>torsten.foertsch@gmx.net<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 by Torsten Foertsch
+Copyright (C) 2005-2008 by Torsten Foertsch
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

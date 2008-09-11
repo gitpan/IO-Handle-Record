@@ -1,11 +1,6 @@
 #!/bin/bash
 
-(perldoc -tU ./lib/IO/Handle/Record.pm
- perldoc -tU $0
-) >README
-
-exit 0
-
+perl -pe '/^=head1 DESCRIPTION/ and print <STDIN>' lib/IO/Handle/Record.pm >README.pod <<EOF
 =head1 INSTALLATION
 
  perl Makefile.PL
@@ -17,18 +12,15 @@ exit 0
 
 =over 4
 
-=item *
+=item B<*> perl 5.8.0
 
-perl 5.8.0
+=item B<*> Storable 2.05
 
-=item *
-
-Storable 2.05
-
-=item *
-
-Class::Member 1.3
+=item B<*> Class::Member 1.3
 
 =back
 
-=cut
+EOF
+
+perldoc -tU README.pod >README
+rm README.pod

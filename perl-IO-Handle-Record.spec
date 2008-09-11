@@ -4,7 +4,7 @@ Group:        Development/Libraries/Perl
 Requires:     perl = %{perl_version}
 Autoreqprov:  on
 Summary:      IO::Handle::Record
-Version:      0.06
+Version:      0.08
 Release:      1
 Source:       IO-Handle-Record-%{version}.tar.gz
 BuildRoot:    %{_tmppath}/%{name}-%{version}-build
@@ -36,7 +36,7 @@ make DESTDIR=$RPM_BUILD_ROOT install_vendor
 
 %files
 %defattr(-, root, root)
-%{perl_vendorlib}/IO
+%{perl_vendorarch}/IO
 %{perl_vendorarch}/auto/IO
 %doc %{_mandir}/man3/IO::Handle::Record.3pm.gz
 /var/adm/perl-modules/perl-IO-Handle-Record
