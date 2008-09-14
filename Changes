@@ -1,5 +1,12 @@
 Revision history for Perl extension IO::Handle::Record.
 
+0.09 Sun Sep 14 17:20:34 CEST 2008
+	- small typo
+	- XS rewrite
+
+0.08 Thu Sep 11 14:28:42 CEST 2008
+	- file descriptor passing
+
 0.07 Mon Sep  8 12:38:03 CEST 2008
 	- local_encoding redord_opt
 

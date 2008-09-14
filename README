@@ -117,14 +117,16 @@ DESCRIPTION
         If a complete record has arrived it is returned.
 
         On EOF an empty list is returned. To distinguish this from the non
-        blocking empty list return set "$!=0" before the operation and check
-        for "$!==EAGAIN" after.
+        blocking empty list return check "$handle->end_of_input".
 
         EINTR is handled internally.
 
         Example:
 
          ($array, $sub, $hash)=$handle->read_record;
+
+    $handle->end_of_input
+        When an end of file condition is read this is set to true.
 
     $handle->read_buffer
     $handle->expected
@@ -134,6 +136,33 @@ DESCRIPTION
     $handle->written
         these methods are used internally to provide a read and write buffer
         for non blocking operations.
+
+  Exceptions
+    *   "IO::Handle::Record: sysread"
+
+        thrown in "read_record". Check $! for more information.
+
+    *   "IO::Handle::Record: premature end of file"
+
+        thrown in "read_record" on end of file if according to the internal
+        protocol more input is expected.
+
+    *   "IO::Handle::Record: busy"
+
+        thrown in "write_record" if a non-blocking write is not yet
+        finished. There may be only one write operation at a time. If that
+        hits you organise a queue.
+
+    *   "IO::Handle::Record: syswrite"
+
+        thrown in "write_record" on an error of the underlying transport
+        method. Check $! for more information.
+
+    *   Other exceptions
+
+        thrown in "read_record" and "write_record" if something cannot be
+        encoded or decoded by the "Storable" module. If that hits you the
+        "Storable" module at one side is probably too old.
 
   EXPORT
     None.

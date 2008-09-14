@@ -1,70 +1,29 @@
 package IO::Handle::Record;
 
-use 5.008;
+use 5.008008;
 use strict;
 use warnings;
 use Storable;
 use Class::Member::GLOB qw/record_opts
 			   read_buffer expected expect_fds received_fds
-			   _received_fds
+			   end_of_input _received_fds
 			   write_buffer fds_to_send written/;
 use Errno qw/EAGAIN EINTR/;
 use Carp;
+my $have_inet6;
+BEGIN {
+  eval {
+    require Socket6;
+    $have_inet6=1;
+  };
+};
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 XSLoader::load('IO::Handle::Record', $VERSION);
 
-BEGIN {
-  package IO::Handle::Record::MsgHdr;
-
-  for my $attr (qw/name buf control flags/) {
-    no strict 'refs';
-
-    *{$attr} = sub : lvalue {
-      my $self = shift;
-      $self->{$attr} = shift if @_;
-      $self->{$attr};
-    };
-  }
-
-  foreach my $attr (qw/name buf control/) {
-    no strict 'refs';
-    *{$attr . "len"} = sub {
-      my $self = shift;
-      my $olen = defined $self->{$attr} ? length($self->{$attr}) : 0;
-      return $olen unless @_;
-
-      my $nlen = shift;
-      if ($nlen != $olen) {
-        $self->{$attr} = $olen > $nlen ?
-                         substr($self->{$attr}, 0, $nlen) :
-                         "\x00" x $nlen;
-      }
-      $nlen;
-    };
-  }
-
-  sub new {
-    my $class = shift;
-    my $self = bless { name => '', control => '', flags => 0 }, $class;
-
-    my %args = @_;
-    foreach my $m (keys %args) {
-      $self->$m($args{$m});
-    }
-
-    return $self;
-  }
-
-  sub cmsghdr {
-    my $self = shift;
-    unless (@_) { return &unpack_cmsghdr($self->{control}); }
-    $self->{control} = &pack_cmsghdr(@_);
-  }
-}
-
+# this is called from the XS stuff in recvmsg
 sub open_fd {
   my ($fd, $flags)=@_;
   use Fcntl qw/O_APPEND O_RDONLY O_WRONLY O_RDWR O_ACCMODE/;
@@ -90,34 +49,37 @@ sub open_fd {
     return undef;
   }
 
-  return bless IO::Handle->new_from_fd($fd, $flags),
-               IO::Handle::Record::typeof($fd);
+  my $obj=bless IO::Handle->new_from_fd($fd, $flags),
+                IO::Handle::Record::typeof($fd);
+
+  if( ref($obj)=~/Socket/ ) {
+    ${*$obj}{io_socket_domain}=socket_family($fd);
+    ${*$obj}{io_socket_type}=socket_type($fd);
+
+    if($obj->sockdomain==AF_INET or
+       ($have_inet6 and $obj->sockdomain==&Socket6::AF_INET6) ) {
+      if($obj->socktype==SOCK_STREAM) {
+	${*$obj}{io_socket_proto}=&Socket::IPPROTO_TCP;
+      } elsif($obj->socktype==SOCK_DGRAM) {
+	${*$obj}{io_socket_proto}=&Socket::IPPROTO_UDP;
+      } elsif($obj->socktype==SOCK_RAW) {
+	${*$obj}{io_socket_proto}=&Socket::IPPROTO_ICMP;
+      }
+    }
+  }
+
+  return $obj;
 }
 
 sub read_record {
   my $I=shift;
 
   my $reader=(issock($I)
-	      ? sub {
-		#my ($fh, $buf, $len, $off)=@_;
-		my $mh=IO::Handle::Record::MsgHdr->new
-		  (buflen=>$_[2], controllen=>10240);
-		my $read=recvmsg($_[0], $mh);
-		if( defined $read ) {
-		  substr( $_[1], (@_>3?0+$_[3]:0) )=$mh->buf;
-		  if( $mh->controllen ) {
-		    $_[0]->_received_fds=[]
-		      unless( defined $_[0]->_received_fds );
-		    push @{$_[0]->_received_fds}, map {
-		      open_fd(@{$_});
-		    } @{($mh->cmsghdr)[2]};
-		  }
-		}
-		return $read;
-	      }
+	      ? sub { recvmsg( $_[0], $_[1], $_[2], (@_>3?$_[3]:0) ); }
 	      : sub { sysread $_[0], $_[1], $_[2], (@_>3?$_[3]:()); });
 
   unless( defined $I->expected ) {
+    undef $I->end_of_input;
     undef $I->received_fds if( $I->can('received_fds') );
     $I->read_buffer='' unless( defined $I->read_buffer );
     my $buflen=length($I->read_buffer);
@@ -125,6 +87,7 @@ sub read_record {
       my $len=$reader->( $I, $I->read_buffer, 8-$buflen, $buflen );
       if( defined($len) && $len==0 ) { # EOF
 	undef $I->read_buffer;
+	$I->end_of_input=1;
 	return;
       } elsif( !defined($len) && $!==EAGAIN ) {
 	return;			# non blocking file handle
@@ -133,7 +96,7 @@ sub read_record {
       } elsif( !$len ) {	# ERROR
 	$len=length $I->read_buffer;
 	undef $I->read_buffer;
-	croak "IO::Handle::Record: Protocol Error (got $len bytes, expected 8)";
+	croak "IO::Handle::Record: sysread";
       }
       $buflen+=$len;
     }
@@ -149,20 +112,21 @@ sub read_record {
   my $wanted=$I->expected;
   my $buflen=length($I->read_buffer);
   while( $buflen<$wanted ) {
-    my $len=$I->sysread( $I->read_buffer, $wanted-$buflen, $buflen );
+    my $len=$reader->( $I, $I->read_buffer, $wanted-$buflen, $buflen );
 
     if( defined $len and $len>0 ) {
       $buflen+=$len;
     } elsif( defined $len ) {	# EOF
       $len=length $I->read_buffer;
       undef $I->read_buffer;
-      croak "IO::Handle::Record: Protocol Error: premature end of file";
+      croak "IO::Handle::Record: premature end of file";
     } elsif( $!==EAGAIN ) {
       return;
     } elsif( $!==EINTR ) {
+      next;
     } else {
       undef $I->read_buffer;
-      croak "IO::Handle::Record: Protocol Error: sysread: $!";
+      croak "IO::Handle::Record: sysread";
     }
   }
 
@@ -191,31 +155,12 @@ sub write_record {
   my $I=shift;
 
   my $writer=(issock($I)
-	      ? sub {
-		#my ($fh, $buf, $len, $off)=@_;
-		my $mh=IO::Handle::Record::MsgHdr->new
-		  (buf=>substr($_[1], (@_>3?0+$_[3]:0), $_[2]));
-		if( defined $_[0]->fds_to_send and
-		    @{$_[0]->fds_to_send} ) {
-		  $mh->cmsghdr
-		    (SOL_SOCKET, SCM_RIGHTS,
-		     pack('i'.@{$_[0]->fds_to_send},
-			  map {
-			    my $fd=fileno $_;
-			    croak "IO::Handle::Record: cannot pass closed file handle\n"
-			      unless( defined $fd );
-			    $fd;
-			  } @{$_[0]->fds_to_send}));
-		}
-		my $written=sendmsg($_[0], $mh);
-		if( defined $written and defined $_[0]->fds_to_send ) {
-		  @{$_[0]->fds_to_send}=(); # done
-		}
-		return $written;
-	      }
+	      ? sub { sendmsg( $_[0], $_[1], $_[2], (@_>3?$_[3]:0) ); }
 	      : sub { syswrite $_[0], $_[1], $_[2], (@_>3?$_[3]:()); });
 
   if( @_ ) {
+    croak "IO::Handle::Record: busy"
+      if( defined $I->write_buffer );
     my $L=($I->record_opts && $I->record_opts->{local_encoding}) ? 'L' : 'N';
     my $msg=eval {
       local $Storable::Deparse;
@@ -256,7 +201,7 @@ sub write_record {
   } elsif( $!==EAGAIN ) {
     return;
   } else {
-    croak "IO::Handle::Record: syswrite error";
+    croak "IO::Handle::Record: syswrite";
   }
 }
 
@@ -297,6 +242,7 @@ sub write_simple_record {
 
 *IO::Handle::write_record=\&write_record;
 *IO::Handle::read_record=\&read_record;
+*IO::Handle::end_of_input=\&end_of_input;
 *IO::Handle::write_simple_record=\&write_simple_record;
 *IO::Handle::read_simple_record=\&read_simple_record;
 *IO::Handle::record_opts=\&record_opts;
@@ -440,14 +386,17 @@ just repeat the operation to read the next data chunk. If a complete record
 has arrived it is returned.
 
 On EOF an empty list is returned. To distinguish this from the non blocking
-empty list return set C<$!=0> before the operation and check for C<$!==EAGAIN>
-after.
+empty list return check C<$handle-E<gt>end_of_input>.
 
 EINTR is handled internally.
 
 Example:
 
  ($array, $sub, $hash)=$handle->read_record;
+
+=item B<$handle-E<gt>end_of_input>
+
+When an end of file condition is read this is set to true.
 
 =item B<$handle-E<gt>read_buffer>
 
@@ -463,6 +412,37 @@ Example:
 
 these methods are used internally to provide a read and write buffer for
 non blocking operations.
+
+=back
+
+=head2 Exceptions
+
+=over 4
+
+=item * C<IO::Handle::Record: sysread>
+
+thrown in C<read_record>. Check C<$!> for more information.
+
+=item * C<IO::Handle::Record: premature end of file>
+
+thrown in C<read_record> on end of file if according to the internal
+protocol more input is expected.
+
+=item * C<IO::Handle::Record: busy>
+
+thrown in C<write_record> if a non-blocking write is not yet finished. There
+may be only one write operation at a time. If that hits you organise a queue.
+
+=item * C<IO::Handle::Record: syswrite>
+
+thrown in C<write_record> on an error of the underlying transport method.
+Check C<$!> for more information.
+
+=item * Other exceptions
+
+thrown in C<read_record> and C<write_record> if something cannot be encoded
+or decoded by the C<Storable> module. If that hits you the C<Storable> module
+at one side is probably too old.
 
 =back
 
