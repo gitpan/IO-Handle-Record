@@ -18,7 +18,7 @@ sub check_afunix {
 }
 
 if( check_afunix ) {
-  plan tests=>4;
+  plan tests=>5;
 } else {
   plan skip_all=>'need a working socketpair based on AF_UNIX sockets';
 }
@@ -44,13 +44,15 @@ if( $pid ) {
   print "# again=$again\n";
 
   $p->blocking(1);
-  ($got, my $filecontent)=$p->read_record;
+  ($got, my $nremaining_fds, my $filecontent)=$p->read_record;
   cmp_deeply $got, 90000, 'nonblocking write';
 
   cmp_deeply $again, code(sub{$_[0]>0 ? 1 : (0, "expected >0, got $_[0]")}),
              'again>0';
 
   cmp_deeply $filecontent, [map {local $/; my $f; open $f, $_ and scalar <$f>} 'Changes', 'MANIFEST'], 'file content';
+
+  cmp_deeply $nremaining_fds, 0, "no remaining fds in _remaining_fds";
 
   close $p; undef $p;
   wait;
@@ -60,7 +62,7 @@ if( $pid ) {
   select undef, undef, undef, 0.5;
   while( my @l=$c->read_record ) {
     local $/;
-    $c->write_record( 0+@l, [map {scalar <$_>} @{$c->received_fds}] );
+    $c->write_record( 0+@l, 0+@{$c->_received_fds}, [map {scalar <$_>} @{$c->received_fds}] );
   }
   exit 0;
 }

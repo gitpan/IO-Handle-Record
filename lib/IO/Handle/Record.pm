@@ -20,7 +20,7 @@ BEGIN {
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 XSLoader::load('IO::Handle::Record', $VERSION);
 
 # this is called from the XS stuff in recvmsg
@@ -158,6 +158,7 @@ sub write_record {
 	      ? sub { sendmsg( $_[0], $_[1], $_[2], (@_>3?$_[3]:0) ); }
 	      : sub { syswrite $_[0], $_[1], $_[2], (@_>3?$_[3]:()); });
 
+  my $can_fds_to_send=$I->can('fds_to_send');
   if( @_ ) {
     croak "IO::Handle::Record: busy"
       if( defined $I->write_buffer );
@@ -175,7 +176,7 @@ sub write_record {
       croak $e;
     }
 
-    if( $I->can('fds_to_send') ) {
+    if( $can_fds_to_send ) {
       $I->write_buffer=pack( $L.'2', length($msg),
 			     (defined $I->fds_to_send
 			      ? 0+@{$I->fds_to_send}
@@ -192,9 +193,13 @@ sub write_record {
 				       length($I->write_buffer)-$I->written,
 				       $I->written)) or
 	  $!==EINTR) ) {
-    $I->written+=$written if( defined $written );
+    if( defined $written ) {
+      undef $I->fds_to_send if( $can_fds_to_send );
+      $I->written+=$written;
+    }
   }
   if( $I->written==length($I->write_buffer) ) {
+    undef $I->fds_to_send if( $can_fds_to_send );
     undef $I->write_buffer;
     undef $I->written;
     return 1;

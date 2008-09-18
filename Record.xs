@@ -360,3 +360,7 @@ smh_recvmsg(s, buf, len, offset = 0, flags = 0)
     
     OUTPUT:
     RETVAL
+
+ # Local Variables:
+ # mode: c
+ # End:

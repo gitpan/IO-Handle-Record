@@ -1,5 +1,11 @@
 Revision history for Perl extension IO::Handle::Record.
 
+0.10 Wed Sep 17 12:38:50 CEST 2008
+	- yet another bug: when passing file descriptors along with a large
+	  perl data structure over a non-blocking socket the file descriptors
+	  may get transferred multiple times
+	- portability issues
+
 0.09 Sun Sep 14 17:20:34 CEST 2008
 	- small typo
 	- XS rewrite
