@@ -1,5 +1,9 @@
 Revision history for Perl extension IO::Handle::Record.
 
+0.11 Thu Sep 25 18:55:15 CEST 2008
+	- peercred() on Linux
+	- Build.PL
+
 0.10 Wed Sep 17 12:38:50 CEST 2008
 	- yet another bug: when passing file descriptors along with a large
 	  perl data structure over a non-blocking socket the file descriptors

@@ -1,7 +1,11 @@
+Build.PL
 Changes
-Makefile.PL
 MANIFEST
+META.yml                                 Module meta-data (added by MakeMaker)
+Makefile.PL
 README
+Record.xs
+lib/IO/Handle/Record.pm
 mk_README.sh
 perl-IO-Handle-Record.spec
 t/001.t
@@ -10,6 +14,3 @@ t/003.t
 t/004.t
 t/005.t
 t/006.t
-lib/IO/Handle/Record.pm
-Record.xs
-META.yml                                 Module meta-data (added by MakeMaker)

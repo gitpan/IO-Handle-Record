@@ -128,6 +128,12 @@ DESCRIPTION
     $handle->end_of_input
         When an end of file condition is read this is set to true.
 
+    ($pid, $uid, $gid)=$handle->peercred
+        ONLY FOR UNIX DOMAIN SOCKETS ON LINUX
+
+        Return the PID, eUID and eGID of the peer at the time of the
+        connect.
+
     $handle->read_buffer
     $handle->expected
     $handle->expect_fds
@@ -201,11 +207,8 @@ Data Transfer Format
     to CPAN) and again in version 0.08.
 
 TODO
-    *   compression
-
-    *   encryption
-
-    *   credential passing over UNIX domain sockets
+    * compression
+    * credential passing over UNIX domain sockets
 
 SEE ALSO
     "IO::Handle"

@@ -255,6 +255,27 @@ rmsg(SV* stream, SV* buffer, int length, int offset, int flags) {
 MODULE = IO::Handle::Record    PACKAGE = IO::Handle::Record   PREFIX = smh_
 
 void
+smh_peercred(s)
+    PerlIO* s;
+PROTOTYPE: $
+PPCODE:
+{
+# ifdef SO_PEERCRED
+  struct ucred uc;
+  socklen_t uc_len=sizeof(uc);
+
+  if( !getsockopt(PerlIO_fileno(s), SOL_SOCKET, SO_PEERCRED, &uc, &uc_len) ) {
+    EXTEND(SP, 3);
+    PUSHs(sv_2mortal(newSViv(uc.pid)));
+    PUSHs(sv_2mortal(newSViv(uc.uid)));
+    PUSHs(sv_2mortal(newSViv(uc.gid)));
+  }
+# else
+  SETERRNO(EOPNOTSUPP, RMS_IFI);
+# endif
+}
+
+void
 smh_issock(s)
     PerlIO* s;
 PROTOTYPE: $

@@ -14,17 +14,13 @@ WriteMakefile(
       (ABSTRACT_FROM  => 'lib/IO/Handle/Record.pm', # retrieve abstract from module
        AUTHOR         => 'Torsten Foertsch <torsten.foertsch@gmx.net>') : ()),
     dist              => {
+			  COMPRESS => 'gzip -9f',
 			  PREOP => './mk_README.sh',
 			 },
 );
 
 sub MY::postamble {
   return <<'EOF';
-README: lib/IO/Handle/Record.pm mk_README.sh
-	./mk_README.sh
-
-COMPRESS = gzip -9f
-
 rpm: dist
 	$(PERL) -i -pe 's/^(Version:\s*).*/$${1}$(VERSION)/' perl-IO-Handle-Record.spec
 	rpmbuild -ba perl-IO-Handle-Record.spec

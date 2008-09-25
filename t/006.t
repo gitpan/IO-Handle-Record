@@ -19,7 +19,7 @@ sub check_afunix {
 }
 
 if( check_afunix ) {
-  plan tests=>14;
+  plan tests=>15;
 } else {
   plan skip_all=>'need a working socketpair based on AF_UNIX sockets';
 }
@@ -92,6 +92,12 @@ if( $pid ) {
   @fds=();
   close $c; undef $c;
   undef $p->received_fds;	# closes received fds
+
+ SKIP: {
+    skip "Peer credentials are supported on Linux only", 1
+      unless( $^O=~/linux/i );
+    cmp_deeply [$p->peercred], [$$, $>, ($)=~/(\d+)/)[0]], 'peer credentials';
+  }
 } else {
   @to_be_deleted=();
   close $p; undef $p;

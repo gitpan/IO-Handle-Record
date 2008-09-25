@@ -20,7 +20,7 @@ BEGIN {
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 XSLoader::load('IO::Handle::Record', $VERSION);
 
 # this is called from the XS stuff in recvmsg
@@ -259,6 +259,7 @@ sub write_simple_record {
 *IO::Handle::written=\&written;
 *IO::Handle::write_buffer=\&write_buffer;
 *IO::Socket::UNIX::fds_to_send=\&fds_to_send;
+*IO::Socket::UNIX::peercred=\&peercred;
 
 1;
 __END__
@@ -403,6 +404,12 @@ Example:
 
 When an end of file condition is read this is set to true.
 
+=item B<($pid, $uid, $gid)=$handle-E<gt>peercred>
+
+B<ONLY FOR UNIX DOMAIN SOCKETS ON LINUX>
+
+Return the PID, eUID and eGID of the peer at the time of the connect.
+
 =item B<$handle-E<gt>read_buffer>
 
 =item B<$handle-E<gt>expected>
@@ -493,11 +500,9 @@ to CPAN) and again in version 0.08.
 
 =over 4
 
-=item * compression
+=item B<*> compression
 
-=item * encryption
-
-=item * credential passing over UNIX domain sockets
+=item B<*> credential passing over UNIX domain sockets
 
 =back
 
