@@ -1,4 +1,4 @@
-use Test::More tests => 7;
+use Test::More tests => 9;
 use Test::Deep;
 use Data::Dumper;
 $Data::Dumper::Deparse=1;
@@ -43,6 +43,15 @@ if( $pid ) {
   ($got)=$p->read_record;
   cmp_deeply Dumper( $got ), Dumper( [+{a=>'b', c=>'d'}, sub { $_[0]+$_[1] }] ),
              'hash+sub list';
+
+  $c->record_opts={forgive_me=>1};
+  $c->write_record( +{a=>'b', STDIN=>\*STDIN} );
+  ($got)=$p->read_record;
+  cmp_deeply $got, [+{a=>'b', STDIN=>re('^SCALAR\(')}],
+             'GLOB passing';
+  cmp_deeply ${$got->[0]->{STDIN}}, re('GLOB'),
+             'GLOB passing2';
+
 } else {
   $c->reader; $p->writer;
   $c->record_opts={receive_CODE=>sub {eval $_[0]}};

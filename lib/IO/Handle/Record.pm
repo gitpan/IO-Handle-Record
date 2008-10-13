@@ -20,7 +20,7 @@ BEGIN {
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 XSLoader::load('IO::Handle::Record', $VERSION);
 
 # this is called from the XS stuff in recvmsg
@@ -165,7 +165,12 @@ sub write_record {
     my $L=($I->record_opts && $I->record_opts->{local_encoding}) ? 'L' : 'N';
     my $msg=eval {
       local $Storable::Deparse;
-      $I->record_opts and $Storable::Deparse=$I->record_opts->{send_CODE};
+      local $Storable::forgive_me;
+      $I->record_opts and do {
+	$Storable::forgive_me=$I->record_opts->{forgive_me};
+	$Storable::Deparse=$I->record_opts->{send_CODE};
+      };
+      local $SIG{__WARN__}=sub {};
       $L eq 'L'
 	? Storable::freeze \@_
 	: Storable::nfreeze \@_;
@@ -315,6 +320,9 @@ The C<send_CODE> and C<receive_CODE> options correspond
 to localized versions of C<$Storable::Deparse> and C<$Storable::Eval>
 respectively. Using them Perl code can be passed over a connection.
 See the L<Storable> manpage for further information.
+
+Further, setting C<forgive_me> sets C<$Storable::forgive_me> before
+C<freeze()>ing anything. That way GLOB values are stored as strings.
 
 In a few cases IO::Handle::Record passes binary data over the connection.
 Normally network byte order is used there. You can save a few CPU cycles

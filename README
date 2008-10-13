@@ -55,6 +55,9 @@ DESCRIPTION
         respectively. Using them Perl code can be passed over a connection.
         See the Storable manpage for further information.
 
+        Further, setting "forgive_me" sets $Storable::forgive_me before
+        "freeze()"ing anything. That way GLOB values are stored as strings.
+
         In a few cases IO::Handle::Record passes binary data over the
         connection. Normally network byte order is used there. You can save
         a few CPU cycles if you set the "local_encoding" option to true. In
