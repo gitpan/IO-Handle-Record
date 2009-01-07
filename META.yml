@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                IO-Handle-Record
-version:             0.12
+version:             0.13
 abstract:            IO::Handle extension to pass perl data structures
 license:             ~
 author:              

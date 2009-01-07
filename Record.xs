@@ -93,6 +93,7 @@ smsg(SV* stream, SV* buffer, SV* length, int offset, int flags) {
 	(fd_av=(AV*)SvRV(*svp)) &&
 	SvTYPE(fd_av)==SVt_PVAV &&
 	(fd_av_len=av_len(fd_av)+1)>0 ) {
+      /* warn("--> sending %d fds", fd_av_len); */
       msg.msg_controllen=CMSG_SPACE(fd_av_len*sizeof(int));
       Newxz(msg.msg_control, msg.msg_controllen, char);
       cmsgp=CMSG_FIRSTHDR(&msg);
@@ -114,9 +115,18 @@ smsg(SV* stream, SV* buffer, SV* length, int offset, int flags) {
 	  goto ret;
 	}
       }
+
+      ret=sendmsg(send_fd, &msg, flags);
+
+      if( ret>0 ) {		/* data sent ==> clear fds_to_send */
+	/* warn("--> clearing fds_to_send"); */
+	av_undef(fd_av);
+      }
+    } else {
+      ret=sendmsg(send_fd, &msg, flags);
     }
 
-    ret=sendmsg(send_fd, &msg, flags);
+    /* warn("--> sending data chunk: controllen=%d, ret=%d", msg.msg_controllen, ret); */
   } else {
     SETERRNO(EBADF, RMS_IFI);
   }
@@ -221,6 +231,7 @@ rmsg(SV* stream, SV* buffer, int length, int offset, int flags) {
       fdp=(int*)CMSG_DATA(cmsgp);
       nfds=(cmsgp->cmsg_len-
 	    ((char*)fdp-(char*)cmsgp))/sizeof(int);
+      /* warn("==> expecting %d fds -- got %d bytes, %d fds", rlim.rlim_cur, ret, nfds); */
       if( nfds>0 ) {
 	/* sv is the typeglob of the filehandle here */
 	svp=hv_fetch(GvHV(sv), RCV_KEY, sizeof(RCV_KEY)-1, FALSE);
@@ -242,6 +253,8 @@ rmsg(SV* stream, SV* buffer, int length, int offset, int flags) {
 	  if( sv ) av_push(fd_av, sv);
 	}
       }
+/*     } else { */
+/*       warn("==> expecting %d fds -- got %d bytes, no CMSG", rlim.rlim_cur, ret); */
     }
   } else {
     SETERRNO(EBADF, RMS_IFI);

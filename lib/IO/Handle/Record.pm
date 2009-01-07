@@ -20,8 +20,12 @@ BEGIN {
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 XSLoader::load('IO::Handle::Record', $VERSION);
+
+use constant {
+  HEADERLENGTH=>8,		# 2 unsigned long
+};
 
 # this is called from the XS stuff in recvmsg
 sub open_fd {
@@ -83,8 +87,8 @@ sub read_record {
     undef $I->received_fds if( $I->can('received_fds') );
     $I->read_buffer='' unless( defined $I->read_buffer );
     my $buflen=length($I->read_buffer);
-    while( $buflen<8 ) {
-      my $len=$reader->( $I, $I->read_buffer, 8-$buflen, $buflen );
+    while( $buflen<HEADERLENGTH ) {
+      my $len=$reader->( $I, $I->read_buffer, HEADERLENGTH-$buflen, $buflen );
       if( defined($len) && $len==0 ) { # EOF
 	undef $I->read_buffer;
 	$I->end_of_input=1;
@@ -193,18 +197,35 @@ sub write_record {
   }
 
   my $written;
+
+  # if there are file descriptors to send send them first along with the length
+  # header only. (work around a bug in the suse 11.1 kernel)
+  if( $I->written==0 and
+      $can_fds_to_send and
+      defined $I->fds_to_send and
+      @{$I->fds_to_send} ) {
+    while(!defined ($written=$writer->($I, $I->write_buffer, HEADERLENGTH))) {
+      if( $!==EINTR ) {
+	next;
+      } elsif( $!==EAGAIN ) {
+	return;
+      } else {
+	croak "IO::Handle::Record: syswrite";
+      }
+    }
+    $I->written+=$written;
+  }
+
   while( $I->written<length($I->write_buffer) and
-	 (defined ($written=$writer->( $I, $I->write_buffer,
-				       length($I->write_buffer)-$I->written,
-				       $I->written)) or
+	 (defined ($written=$writer->($I, $I->write_buffer,
+				      length($I->write_buffer)-$I->written,
+				      $I->written)) or
 	  $!==EINTR) ) {
     if( defined $written ) {
-      undef $I->fds_to_send if( $can_fds_to_send );
       $I->written+=$written;
     }
   }
   if( $I->written==length($I->write_buffer) ) {
-    undef $I->fds_to_send if( $can_fds_to_send );
     undef $I->write_buffer;
     undef $I->written;
     return 1;
@@ -481,6 +502,9 @@ that are passed along with the data are then each C<pack()>ed as a 4 byte
 binary value using the C<L> or C<N> template. C<L> is used of C<local_encoding>
 is in effect.
 
+If there are file descriptors to be passed they are sent by a separate
+sendmsg call along with 2 length fields only.
+
 Both fields is the prepended to the data chunk:
 
  +-----------------+------------------------+
@@ -524,7 +548,7 @@ Torsten Foertsch, E<lt>torsten.foertsch@gmx.net<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005-2008 by Torsten Foertsch
+Copyright (C) 2005-2009 by Torsten Foertsch
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

@@ -186,6 +186,9 @@ Data Transfer Format
     binary value using the "L" or "N" template. "L" is used of
     "local_encoding" is in effect.
 
+    If there are file descriptors to be passed they are sent by a separate
+    sendmsg call along with 2 length fields only.
+
     Both fields is the prepended to the data chunk:
 
      +-----------------+------------------------+
@@ -220,7 +223,7 @@ AUTHOR
     Torsten Foertsch, <torsten.foertsch@gmx.net<gt>
 
 COPYRIGHT AND LICENSE
-    Copyright (C) 2005-2008 by Torsten Foertsch
+    Copyright (C) 2005-2009 by Torsten Foertsch
 
     This library is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.
