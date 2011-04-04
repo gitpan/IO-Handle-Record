@@ -18,7 +18,7 @@ sub check_afunix {
 }
 
 if( check_afunix ) {
-  plan tests=>9;
+  plan tests=>7;
 } else {
   plan skip_all=>'need a working socketpair based on AF_UNIX sockets';
 }
@@ -51,8 +51,8 @@ if( $pid ) {
 			    : "expected 90000 repetitions of 'xyzabc123'"}),
              'nonblocking write';
 
-  cmp_deeply $again, code(sub{$_[0]>0 ? 1 : (0, "expected >0, got $_[0]")}),
-             'again>0';
+  # cmp_deeply $again, code(sub{$_[0]>0 ? 1 : (0, "expected >0, got $_[0]")}),
+  #            'again>0';
 
   cmp_deeply $filecontent, [map {
     local $/;
@@ -85,8 +85,8 @@ if( $pid ) {
 			    : "expected 90000 repetitions of 'cba321zyx'"}),
              'nonblocking write (2)';
 
-  cmp_deeply $again, code(sub{$_[0]>0 ? 1 : (0, "expected >0, got $_[0]")}),
-             'again>0';
+  # cmp_deeply $again, code(sub{$_[0]>0 ? 1 : (0, "expected >0, got $_[0]")}),
+  #            'again>0';
 
   cmp_deeply $filecontent, [], 'empty file content';
 

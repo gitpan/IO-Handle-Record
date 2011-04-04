@@ -20,7 +20,7 @@ BEGIN {
 use Socket;
 require XSLoader;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 XSLoader::load('IO::Handle::Record', $VERSION);
 
 use constant {

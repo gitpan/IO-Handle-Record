@@ -1,5 +1,13 @@
 Revision history for Perl extension IO::Handle::Record.
 
+0.13 Wed Jan  7 12:32:24 CET 2009
+	- work around a kernel bug in openSUSE 11.1. If there are file
+	  descriptors to pass they are sent by a short separate message
+	  of 8 bytes (number of file descriptors + number of bytes in the
+	  record). This prevents the file descriptors to be read by the
+	  receiver multiple times if the passed data block is too large.
+	  (t/005.t)
+
 0.12 Sun Oct 12 20:36:37 CEST 2008
 	- forgive_me record option
 
