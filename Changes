@@ -1,5 +1,9 @@
 Revision history for Perl extension IO::Handle::Record.
 
+0.15 Fri Mar 22 11:42:31 CET 2013
+     - fix a test problem caused by the new hash randomization in Perl
+       5.17.x
+
 0.13 Wed Jan  7 12:32:24 CET 2009
 	- work around a kernel bug in openSUSE 11.1. If there are file
 	  descriptors to pass they are sent by a short separate message

@@ -50,8 +50,9 @@ if( $pid ) {
   $p->record_opts={receive_CODE=>sub {eval $_[0]}, send_CODE=>1};
   $p->write_record( +{a=>'b', c=>'d'}, sub { $_[0]+$_[1] } );
   ($got)=$p->read_record;
-  cmp_deeply Dumper( $got ), Dumper( [+{a=>'b', c=>'d'}, sub { $_[0]+$_[1] }] ),
-             'hash+sub list';
+  cmp_deeply $got, [+{a=>'b', c=>'d'},
+                    code(sub {ref($_[0]) eq 'CODE' and $_[0]->(1, 2)==3})],
+                      'hash+sub list';
 } else {
   close $p; undef $p;
   $c->record_opts={receive_CODE=>sub {eval $_[0]}, send_CODE=>1};
